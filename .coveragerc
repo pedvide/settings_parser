@@ -1,0 +1,16 @@
+[run]
+source = settings_parser
+omit =
+    *test_*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if self.debug:
+    if settings.DEBUG
+    raise AssertionError
+    raise NotImplementedError
+    return NotImplemented
+    if 0:
+    if __name__ == .__main__.:

@@ -1,0 +1,7 @@
+[MESSAGES CONTROL]
+# E1101 numpy errors
+# C0103 invalid name (using caps letters)
+# W0511 TODO gives a warning
+# C0326 spaces around keyword assignment are ok when type hints are given
+# E1126 pylint doesn't support type annotations
+disable=E1101,C0103,W0511,C0326,E1126
