@@ -1,4 +1,4 @@
-ruamel_yaml # anaconda
+ruamel_yaml<0.15 # anaconda
 
 # only for tests
 pytest >=3.0.3 # anaconda
