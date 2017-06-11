@@ -6,34 +6,36 @@ Created on Fri Oct 14 13:33:57 2016
 """
 # pylint: disable=E1101
 
-from collections import OrderedDict
-import re
 #import sys
 import logging
 # nice debug printing of settings
 import pprint
-import os
 import copy
 import warnings
-from typing import Dict, List, Any, Union
+from typing import Dict, Any, Union
 
-import yaml
+import ruamel_yaml as yaml
 
-from setting_parser.util import ConfigError, ConfigWarning, log_exceptions_warnings
-from setting_parser.value import Value
-import setting_parser.settings_config as configs
+from settings_parser.util import ConfigError, ConfigWarning, log_exceptions_warnings
+from settings_parser.value import Value, DictValue
+import settings_parser.settings_config as settings_config
 
 class Settings(Dict):
     '''Contains all settings for the simulations,
-        along with methods to load and parse settings files.'''
+        along with methods to load and validate settings files.'''
 
-    def __init__(self, cte_dict: Dict = None) -> None:  # pylint: disable=W0231
+    def __init__(self, values_dict: Dict) -> None:  # pylint: disable=W0231
+        self.dict_value = DictValue(copy.deepcopy(values_dict))
 
-        if cte_dict is None:
-            cte_dict = dict()
-        else:
-            # make own copy
-            cte_dict = copy.deepcopy(cte_dict)
+        namedvalue_list = self.dict_value.values_list
+
+        self.needed_values = set(namedvalue.key for namedvalue in namedvalue_list
+                                 if namedvalue.kind is Value.mandatory)
+        self.optional_values = set(namedvalue.key for namedvalue in namedvalue_list
+                                 if namedvalue.kind is Value.optional)
+        self.exclusive_values = set(namedvalue.key for namedvalue in namedvalue_list
+                                 if namedvalue.kind is Value.exclusive)
+        self.optional_values = self.optional_values | self.exclusive_values
 
     def __getitem__(self, key: str) -> Any:
         '''Implements Settings[key].'''
@@ -79,9 +81,8 @@ class Settings(Dict):
         '''Two settings are equal if all their attributes are equal.'''
         if not isinstance(other, Settings):
             return NotImplemented
-        for attr in ['config_file', 'lattice', 'states', 'excitations', 'decay']:
-            if self[attr] != other[attr]:
-                return False
+        if self.dict_value != other.dict_value:
+            return False
         return True
 
     def __ne__(self, other: object) -> bool:
@@ -92,55 +93,39 @@ class Settings(Dict):
 
     def __repr__(self) -> str:
         '''Representation of a settings instance.'''
-        return '''{}(lattice={},\n
-states={},\n
-excitations={},\n
-decay={},\n
-energy_transfer={})'''.format(self.__class__.__name__, pprint.pformat(self.lattice),
-                              pprint.pformat(self.states), pprint.pformat(self.excitations),
-                              pprint.pformat(self.decay), pprint.pformat(self.energy_transfer))
+        dict_value = repr(self.dict_value).replace('DictValue(', '', 1)
+        dict_value = dict_value[:-1]
+        return '{}({})'.format(self.__class__.__name__, dict_value)
 
-    @staticmethod
     @log_exceptions_warnings
-    def parse_all_values(settings_list: List, config_dict: Dict) -> Dict:
-        '''Parses the settings in the config_dict
+    def validate_all_values(self, file_dict: Dict) -> Dict:
+        '''Validates the settings in the config_dict
             using the settings list.'''
-#        pprint.pprint(config_dict)
-
-        present_values = set(config_dict.keys())
-
-        needed_values = set(val.name for val in settings_list if val.kind is Value.mandatory)
-        optional_values = set(val.name for val in settings_list if val.kind is Value.optional)
-        exclusive_values = set(val.name for val in settings_list if val.kind is Value.exclusive)
-        optional_values = optional_values | exclusive_values
+#        pprint.pprint(file_cte)
+        present_values = set(file_dict.keys())
 
         # if present values don't include all needed values
-        if not present_values.issuperset(needed_values):
+        if not present_values.issuperset(self.needed_values):
             raise ConfigError('Sections that are needed but not present in the file: ' +
-                              str(needed_values - present_values) +
+                              str(self.needed_values - present_values) +
                               '. Those sections must be present!')
 
-        set_extra = present_values - needed_values
+        set_extra = present_values - self.needed_values
         # if there are extra values and they aren't optional
-        if set_extra and not set_extra.issubset(optional_values):
+        if set_extra and not set_extra.issubset(self.optional_values):
             warnings.warn('WARNING! The following values are not recognized:: ' +
-                          str(set_extra - optional_values) +
+                          str(set_extra - self.optional_values) +
                           '. Those values or sections should not be present', ConfigWarning)
 
-        parsed_dict = {}  # type: Dict
-        for value in settings_list:
-            name = value.name
-            if value.kind is not Value.mandatory and (name not in config_dict or
-                                                      config_dict[name] is None):
-                continue
-            value.name = name
-            parsed_dict.update({name: value.parse(config_dict[name])})
+        parsed_dict = self.dict_value.validate(file_dict)
+        for key, value in parsed_dict.items():
+            setattr(self, str(key), value)
 
 #        pprint.pprint(parsed_dict)
         return parsed_dict
 
     @log_exceptions_warnings
-    def load(self, filename: str) -> None:
+    def validate(self, filename: str) -> None:
         ''' Load filename and extract the settings for the simulations
             If mandatory values are missing, errors are logged
             and exceptions are raised
@@ -151,26 +136,20 @@ energy_transfer={})'''.format(self.__class__.__name__, pprint.pformat(self.latti
 
         # load file into config_cte dictionary.
         # the function checks that the file exists and that there are no errors
-        config_cte = Loader().load_settings_file(filename)
-
-        # check version
-        if 'version' not in config_cte or config_cte['version'] != 1:
-            raise ConfigError('Error in configuration file ({})! '.format(filename) +
-                              'Version number must be 1!')
-        del config_cte['version']
+        file_cte = Loader().load_settings_file(filename)
 
         # store original configuration file
         with open(filename, 'rt') as file:
             self.config_file = file.read()
 
-        self.parsed_settings = self.parse_all_values(configs.settings, config_cte)
+        self.parsed_settings = self.validate_all_values(file_cte)
 
-        # log read and parsed settings
+        # log read and validated settings
         # use pretty print
         logger.debug('Settings dump:')
         logger.debug('File dict (config_cte):')
-        logger.debug(pprint.pformat(config_cte))
-        logger.debug('Parsed dict (cte):')
+        logger.debug(pprint.pformat(file_cte))
+        logger.debug('Validated dict (cte):')
         logger.debug(repr(self))
 
         logger.info('Settings loaded!')
@@ -210,10 +189,9 @@ class Loader():
         try:
             if not direct_file:
                 with open(filename) as file:
-                    # load data as ordered dictionaries so the ET processes are in the right order
-                    file_dict = self._ordered_load(file, yaml.SafeLoader)
+                    file_dict = yaml.load(file)
             else:
-                file_dict = self._ordered_load(filename, yaml.SafeLoader)
+                file_dict = yaml.load(filename)
         except OSError as err:
             raise ConfigError('Error reading file ({})! '.format(filename) +
                               str(err.args)) from err
@@ -233,48 +211,14 @@ class Loader():
 
         return file_dict
 
-    @staticmethod
-    def _ordered_load(stream, YAML_Loader=yaml.Loader,  # type: ignore
-                      object_pairs_hook=OrderedDict):
-        '''Load data as ordered dictionaries so the ET processes are in the right order
-        # not necessary any more, but still used
-            http://stackoverflow.com/a/21912744
-        '''
-
-        class OrderedLoader(YAML_Loader):
-            '''Load the yaml file use an OderedDict'''
-            pass
-
-        def no_duplicates_constructor(loader, node, deep=False):  # type: ignore
-            """Check for duplicate keys."""
-            mapping = {}
-            for key_node, value_node in node.value:
-                key = loader.construct_object(key_node, deep=deep)
-                if key in mapping:
-                    msg = "Duplicate label {}!".format(key)
-                    raise ConfigError(msg)
-                value = loader.construct_object(value_node, deep=deep)
-                mapping[key] = value
-
-            # Load the yaml file use an OderedDict
-            loader.flatten_mapping(node)
-            return object_pairs_hook(loader.construct_pairs(node))
-
-        OrderedLoader.add_constructor(
-            yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
-            no_duplicates_constructor)
-
-        return yaml.load(stream, OrderedLoader)
-
-def load(filename: str) -> Settings:
-    '''Creates a new Settings instance and loads the configuration file.
-        Returns the Settings instance (dict-like).'''
-    settings = Settings()
-    settings.load(filename)
-    return settings
+#def load(filename: str, settings_dict: Dict) -> Settings:
+#    '''Creates a new Settings instance and loads the configuration file.
+#        Returns the Settings instance (dict-like).'''
+#    settings = Settings()
+#    settings.load(filename, settings_dict)
+#    return settings
 
 
-#if __name__ == "__main__":
-#    import settings_parser.settings as settings
-##    cte_std = settings.load('test/test_settings/test_standard_config.txt')
-#    cte = settings.load('config_file.cfg')
+if __name__ == "__main__":
+    settings = Settings(settings_config.settings)
+    settings.validate('config_file.cfg')

@@ -215,6 +215,9 @@ pip-log.txt
 #Mr Developer
 .mr.developer.cfg
 
+# test coverage report
+settings_parser/test/cov_html/
+
 ##############
 ## Spyder
 ##############

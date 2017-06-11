@@ -25,41 +25,12 @@ def temp_filename(data: str = None, mode: str = 'wt') -> Generator:
     # file won't be deleted after closing
     temp = tempfile.NamedTemporaryFile(mode=mode, delete=False)
     if data:
-        temp.write(data)  # type: ignore
+        temp.write(data)
     temp.close()
     try:
         yield temp.name
     finally:
         os.unlink(temp.name)  # delete file
-
-
-class cached_property():
-    '''Computes attribute value and caches it in the instance.
-    Python Cookbook (Denis Otkidach) http://stackoverflow.com/users/168352/denis-otkidach
-    This decorator allows you to create a property which can be computed once and
-    accessed many times. Sort of like memoization.
-    http://stackoverflow.com/a/6429334
-    '''
-    def __init__(self, method: Callable, name: str = None) -> None:
-        '''Record the unbound-method and the name'''
-        self.method = method
-        self.name = name or method.__name__
-        self.__doc__ = method.__doc__
-
-    def __get__(self, inst: object, cls: type) -> Any:
-        '''self: <__main__.cache object at 0xb781340c>
-           inst: <__main__.Foo object at 0xb781348c>
-           cls: <class '__main__.Foo'>
-        '''
-        if inst is None:
-            # instance attribute accessed on class, return self
-            # You get here if you write `Foo.bar`
-            return self
-        # compute, cache and return the instance's attribute value
-        result = self.method(inst)
-        # setattr redefines the instance's attribute so this doesn't get called again
-        setattr(inst, self.name, result)
-        return result
 
 
 def log_exceptions_warnings(function: Callable) -> Callable:
@@ -105,11 +76,16 @@ def console_logger_level(level: int) -> Generator:  # pragma: no cover
 
 
 @contextmanager
-def no_logging() -> Generator:  # pragma: no cover
+def no_logging() -> Generator:
     '''Temporary disable all logging.'''
     logging.disable(logging.CRITICAL)
     yield None
     logging.disable(logging.NOTSET)
+
+
+class ValueTypeError(TypeError):
+    '''The type passed to Value is not valid.'''
+    pass
 
 
 class ConfigError(SyntaxError):
