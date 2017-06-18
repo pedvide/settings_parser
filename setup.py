@@ -18,7 +18,7 @@ Created on Tue Nov  1 16:17:59 2016
 # build and upload to pypi as before.
 # then on directory python/conda delete folder settings_parser
 # then conda skeleton pypi --setup-options="--single-version-externally-managed --record=record.txt" settings_parser
-# conda build --py 3.5 --py 3.6 settings_parser
+# conda build --py 3.6 settings_parser
 # conda convert -f --platform all PATH-TO-PACKAGE -o .
 # anaconda login
 # anaconda upload */settings_parser-*
@@ -68,9 +68,8 @@ setup(
         'Development Status :: 3 - Alpha',
 
         # Indicate who your project is intended for
-        'Intended Audience :: Science/Research',
-        'Topic :: Scientific/Engineering :: Chemistry',
-        'Topic :: Scientific/Engineering :: Physics',
+        'Intended Audience :: Developers',
+        'Topic :: Software Development :: User Interfaces',
 
         'Operating System :: MacOS :: MacOS X',
         'Operating System :: Microsoft :: Windows',
@@ -81,12 +80,11 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
     ],
 
     # What does your project relate to?
-    keywords='settings configuration config parser',
+    keywords='settings configuration config validator parser',
 
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().

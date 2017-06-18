@@ -7,6 +7,7 @@ Created on Sat Oct 22 00:10:24 2016
 
 import pytest
 import os
+import datetime
 
 import settings_parser.settings as settings
 from settings_parser.settings import Value, DictValue, Dict
@@ -21,14 +22,20 @@ def good_settings():
                            'maria': {'age': 32, 'city': 'madrid'},
                            'pedro': {'age': 28, 'city': 'utrecht'},
                            'teresa': {'age': 34, 'city': 'madrid'}},
-                'version': 1
+                'version': 1,
+                'number': 3,
+                'date1': datetime.date(2017, 6, 17),
+                'date2': datetime.date(2017, 6, 17)
                  }
     return cte_good
 
 @pytest.fixture(scope='function')
 def settings_dict():
     return {'version': Value(int, val_min=1, val_max=1),
-            'people': Value(Dict[str, DictValue({'age': int, 'city': str})])
+            'number': int,
+            'people': Value(Dict[str, DictValue({'age': int, 'city': str})]),
+            'date1': Value(datetime.date, expand_args=True),
+            'date2': Value(datetime.date, expand_args=True)
            }
 
 
@@ -38,20 +45,7 @@ def test_good_config(good_settings, settings_dict):
     sett = settings.Settings(settings_dict)
     sett.validate(filename)
 
-    assert sett.parsed_settings == good_settings
-
-@pytest.mark.xfail
-def test_settings_class(settings_dict):
-    '''Test the creation, bool, and equality of Settings instances.'''
-
-    settings1 = settings.Settings(settings_dict)
-    settings2 = settings.Settings(settings_dict)
-    assert settings1 == settings2
-
-    settings_dict['version'] = 3
-    settings3 = settings.Settings(settings_dict)
-    assert settings3 != settings1
-
+    assert sett.settings == good_settings
 
 def test_non_existing_file(settings_dict):
     with pytest.raises(settings.ConfigError) as excinfo:

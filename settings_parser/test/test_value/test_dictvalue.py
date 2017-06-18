@@ -43,10 +43,10 @@ def test_DictValue():
     # extra key:value pairs are ok, but they give off a warning and are ignored
     d = {'age': 28, 'city': 'utrecht'}
     d2 = {'age': 28, 'city': 'utrecht', 'extra': True}
-    with pytest.warns(ConfigWarning) as record:
+    with pytest.warns(ConfigWarning) as warnings:
         assert DictValue({'age': int, 'city': str}).validate(d2) == d
-    assert len(record) == 1 # one warning
-    warning = record.pop(ConfigWarning)
+    assert len(warnings) == 1 # one warning
+    warning = warnings.pop(ConfigWarning)
     assert warning.category == ConfigWarning
     assert 'Some values or sections should not be present in the file' in str(warning.message)
 
@@ -111,6 +111,17 @@ def test_nested_DictValue():
     d = {'subsection1': {'subsubsection1': 'asd', 'subsubsection2': 5}, 'subsection2': [1,2,3]}
     assert DictValue({'subsection1': DictValue({'subsubsection1': str, 'subsubsection2': int}),
                       'subsection2': Value(List[int])}).validate(d) == d
+    # avoid repetition of DictValue in nested types
+    assert DictValue({'subsection1': {'subsubsection1': str, 'subsubsection2': int},
+                      'subsection2': Value(List[int])}).validate(d) == d
+
+    d2 = {'subsection1': {'subsubsection1': 'asd', 'subsubsection2': 5}, 'subsection2': 1}
+    with pytest.raises(ValueError) as excinfo:
+        DictValue({'subsection1': {'subsubsection1': str, 'subsubsection2': int},
+                   'subsection2': Value(List[int])}).validate(d2)
+    assert excinfo.match("Setting subsection2")
+    assert excinfo.match("does not have the right type")
+    assert excinfo.type == ValueError
 
 
 def test_DictValue_in_Dict():

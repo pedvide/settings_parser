@@ -12,7 +12,7 @@ import logging
 import pprint
 import copy
 import warnings
-from typing import Dict, Any, Union
+from typing import Dict, Union
 
 import ruamel_yaml as yaml
 
@@ -21,8 +21,7 @@ from settings_parser.value import Value, DictValue
 import settings_parser.settings_config as settings_config
 
 class Settings(Dict):
-    '''Contains all settings for the simulations,
-        along with methods to load and validate settings files.'''
+    '''Contains the user settings and a method to validate settings files.'''
 
     def __init__(self, values_dict: Dict) -> None:  # pylint: disable=W0231
         self.dict_value = DictValue(copy.deepcopy(values_dict))
@@ -36,60 +35,6 @@ class Settings(Dict):
         self.exclusive_values = set(namedvalue.key for namedvalue in namedvalue_list
                                  if namedvalue.kind is Value.exclusive)
         self.optional_values = self.optional_values | self.exclusive_values
-
-    def __getitem__(self, key: str) -> Any:
-        '''Implements Settings[key].'''
-        try:
-            return getattr(self, key)
-        except AttributeError as err:
-            raise KeyError(str(err))
-
-    def get(self, key: str, default: Any = None) -> Any:
-        '''Implements settings.get(key, default).'''
-        if key in self:
-            return getattr(self, key)
-        else:
-            return default
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        '''Implements Settings[key] = value.'''
-        setattr(self, key, value)
-
-    def __delitem__(self, key: str) -> None:
-        '''Implements del Settings[key].'''
-        delattr(self, key)
-
-    def __contains__(self, key: Any) -> bool:
-        '''Returns True if the settings contains the key'''
-        try:
-            self[key]
-        except KeyError:
-            return False
-        else:
-            return True
-
-    def __bool__(self) -> bool:
-        '''Instance is True if all its data structures have been filled out'''
-        for var in vars(self).keys():
-#            print(var)
-            # If the var is not literally False, but empty
-            if getattr(self, var) is not False and not getattr(self, var):
-                return False
-        return True
-
-    def __eq__(self, other: object) -> bool:
-        '''Two settings are equal if all their attributes are equal.'''
-        if not isinstance(other, Settings):
-            return NotImplemented
-        if self.dict_value != other.dict_value:
-            return False
-        return True
-
-    def __ne__(self, other: object) -> bool:
-        '''Define a non-equality test'''
-        if not isinstance(other, Settings):
-            return NotImplemented
-        return not self == other
 
     def __repr__(self) -> str:
         '''Representation of a settings instance.'''
@@ -118,8 +63,6 @@ class Settings(Dict):
                           '. Those values or sections should not be present', ConfigWarning)
 
         parsed_dict = self.dict_value.validate(file_dict)
-        for key, value in parsed_dict.items():
-            setattr(self, str(key), value)
 
 #        pprint.pprint(parsed_dict)
         return parsed_dict
@@ -142,7 +85,12 @@ class Settings(Dict):
         with open(filename, 'rt') as file:
             self.config_file = file.read()
 
-        self.parsed_settings = self.validate_all_values(file_cte)
+        self.settings = self.validate_all_values(file_cte)
+
+        # access settings directly as Setting.setting
+        for key, value in self.settings.items():
+            setattr(self, str(key), value)
+            self[str(key)] = value
 
         # log read and validated settings
         # use pretty print
@@ -219,6 +167,6 @@ class Loader():
 #    return settings
 
 
-if __name__ == "__main__":
-    settings = Settings(settings_config.settings)
-    settings.validate('config_file.cfg')
+#if __name__ == "__main__":
+#    settings = Settings(settings_config.settings)
+#    settings.validate('config_file.cfg')

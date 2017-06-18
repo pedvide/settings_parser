@@ -218,6 +218,9 @@ pip-log.txt
 # test coverage report
 settings_parser/test/cov_html/
 
+# mypy cache
+.mypy_cache
+
 ##############
 ## Spyder
 ##############

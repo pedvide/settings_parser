@@ -12,7 +12,7 @@ import sys
 #import pprint
 from typing import Dict, List, Tuple
 from typing import Callable, TypeVar, Hashable, Any
-from typing import Union, Sequence, Iterable, Mapping, Sized
+from typing import Union, Sequence, Iterable, Mapping, Sized, Collection
 from functools import wraps
 from itertools import zip_longest
 from enum import Enum
@@ -63,7 +63,10 @@ class Value():
         tuples composed of those types.
         Fun is a function of one parameter that returns bool,
         the value to be validated will be passed to fun and for the validation to succeed
-        it must return True.'''
+        it must return True.
+        If expand_args is True, the value passed to validate will be expanded
+        with **value if it's a dictionary and with *value otherwise.
+        This allows using types that have several arguments, such as datetimes.'''
 
     mandatory = Kind.mandatory
     optional = Kind.optional
@@ -75,7 +78,8 @@ class Value():
                  kind: Kind = Kind.mandatory,
                  fun: Callable[[T], bool] = None,
                  len_max: Union[int, List[int]] = None,
-                 len_min: Union[int, List[int]] = None) -> None:
+                 len_min: Union[int, List[int]] = None,
+                 expand_args: bool = False) -> None:
         '''Val type can be a nested type (List[int], List[List[int]])'''
 
         self.name = name
@@ -92,6 +96,8 @@ class Value():
         # convert to list
         self.len_max = [len_max] if not isinstance(len_max, Sequence) else len_max
         self.len_min = [len_min] if not isinstance(len_min, Sequence) else len_min
+
+        self.expand_args = expand_args
 
     def __repr__(self) -> str:
         '''Return a representation of Value'''
@@ -156,10 +162,18 @@ class Value():
     def _cast_to_type(self, value: T, val_type: ValType) -> Any:
         '''Cast the value to the type, which should be callable.'''
         try:
-            parsed_value = val_type(value)
+            if self.expand_args:
+                if isinstance(value, Dict):
+                    parsed_value = val_type(**value)
+                elif isinstance(value, Iterable):
+                    parsed_value = val_type(*value)
+                else:
+                    raise ValueError('Expected a list or a dictionary.')
+            else:
+                parsed_value = val_type(value)
         except (ValueError, TypeError) as err:  # no match
             raise ValueError(self._wrong_type_error_msg(value, val_type) +
-                             ' Details: "' + str(err).capitalize() + '"')
+                             ' Details: "' + str(err).capitalize() + '".')
         else:
             # no exception, val_type matched the value!
             return parsed_value
@@ -260,13 +274,13 @@ class Value():
             return self._cast_to_type(mapping, mapping_type)
 
         # generic iterables such as Lists, Tuple, Sets: validate each item
-        elif hasattr(val_type, '__extra__') and  issubclass(val_type, Iterable):
+        elif hasattr(val_type, '__extra__') and issubclass(val_type, Iterable):
             # first check that lst is of the right type
             # str behave like lists, so if the user wanted a list and value is a str,
             # cast_to_type will succeed! So avoid it,
             # also avoid iterating if value is not iterable
             if (isinstance(value, str) and not issubclass(val_type, str) or
-                not isinstance(value, Iterable)):
+                not isinstance(value, Collection)):
                 raise ValueError(self._wrong_type_error_msg(value, val_type))
 
             elements_type = val_type.__args__   # type: ignore
@@ -297,16 +311,9 @@ class Value():
         # DictValue also ends up here, casting a value to it calls DictValue's own validate method.
         elif not hasattr(val_type, '__extra__'):
             parsed_value = self._cast_to_type(value, val_type)
-            # don´t check if key is True: it's a mapping key
+            # don't check if key is True: it's a mapping key
             if not key:
                 self._check_val_max_min(parsed_value)
-
-            if self.fun and not self.fun(parsed_value):
-                msg1 = 'Setting {} (value: {!r}, type: {}) is not '.format(self.name or value,
-                                                                           value,
-                                                                           type(value).__name__)
-                msg2 = 'valid according to the user function {}.'.format(self.fun.__name__)
-                raise ValueError(msg1 + msg2)
 
             if isinstance(parsed_value, Sized):
                 self._check_seq_len(parsed_value, cur_len_max, cur_len_min)
@@ -318,7 +325,17 @@ class Value():
     def validate(self, value: T) -> Any:
         '''validates the value from a settings file
             and tries to convert it to this Value's type.'''
-        return self._validate_type_tree(value, self.val_type, self.len_max, self.len_min)
+        validated_value =  self._validate_type_tree(value, self.val_type,
+                                                    self.len_max, self.len_min)
+
+        if self.fun and not self.fun(validated_value):
+            msg1 = 'Setting {} (value: {!r}, type: {}) is not '.format(self.name or validated_value,
+                                                                       validated_value,
+                                                                       type(validated_value).__name__)
+            msg2 = 'valid according to the user function {}.'.format(self.fun.__name__)
+            raise ValueError(msg1 + msg2)
+
+        return validated_value
 
 
 def _clean_type_name(val_type: ValType) -> str:
@@ -374,9 +391,11 @@ class DictValue():
     def __init__(self, values: Dict[Hashable, Union[Value, ValType]],
                  kind: Kind = Kind.mandatory) -> None:
         '''values is a dictionary with the keys hashable
-            and the values either simple types or Value instances.'''
+            and the values are simple types, Value instances or dictionaries of either.'''
         if isinstance(values, Dict):
-            self.values_list = [NamedValue(key, value) for key, value in values.items()]
+            self.values_list = [NamedValue(key, value if not isinstance(value, Dict)
+                                                else DictValue(value))
+                                for key, value in values.items()]
         else:
             msg = 'The first argument must be a dictionary.'
             raise ValueError(msg)

@@ -19,6 +19,9 @@ def idfn(value):
     return str(type(value).__name__) + '_' + str(value)
 
 
+#### SIMPLE TYPES
+
+
 @pytest.mark.parametrize('value', [5, 1.25, 1+5j, Fraction(2,5),
                                    'a', 'asd', '\u00B5', {'a': 2},
                                    True, b'2458', [1,2,3], (4,5,6), {7,8,9}], ids=idfn)
@@ -44,6 +47,14 @@ def test_wrong_casts():
     with pytest.raises(ValueError) as excinfo:
         Value(bytes).validate('asd')
     assert excinfo.match("does not have the right type")
+    assert excinfo.type == ValueError
+
+
+def test_wrong_generics():
+    '''Test that using a generic without arguments fails'''
+    with pytest.raises(ValueError) as excinfo:
+        Value(List).validate([1,2,3])
+    assert excinfo.match("Invalid requested type \(List\), generic types must contain arguments.")
     assert excinfo.type == ValueError
 
 
@@ -186,16 +197,33 @@ def test_unknown_type():
 
 def test_custom_functions():
     '''Test user-defined functions that restrict the value.'''
-    Value(int, fun=lambda x: x!=5).validate(4)
-    Value(int, fun=lambda x: x!=5).validate(6)
+    assert Value(int, fun=lambda x: x!=5).validate(4) == 4
+    assert Value(int, fun=lambda x: x!=5).validate(6) == 6
 
     with pytest.raises(ValueError) as excinfo:
         Value(int, fun=lambda x: x!=5).validate(5)
     assert excinfo.match(r"is not valid according to the user function")
     assert excinfo.type == ValueError
 
-    Value(List[int], fun=lambda x: x==6).validate([6, 6, 6])
+    assert Value(List[int], fun=lambda lst: all(x==6 for x in lst)).validate([6, 6, 6]) == [6, 6, 6]
 
+
+def test_argument_expansion():
+    '''Test types with more than one argument in the constructor.'''
+    import datetime
+
+    with pytest.raises(ValueError) as excinfo:
+        Value(datetime.date).validate([2015, 5, 3])
+    assert excinfo.match('does not have the right type')
+    assert excinfo.type == ValueError
+
+    assert Value(datetime.date, expand_args=True).validate((2015, 5, 3)) == datetime.date(2015, 5, 3)
+    assert Value(datetime.date, expand_args=True).validate({'year': 2015, 'month': 5, 'day': 3}) == datetime.date(2015, 5, 3)
+
+    with pytest.raises(ValueError) as excinfo:
+        Value(datetime.date, expand_args=True).validate(2015)
+    assert excinfo.match('Expected a list or a dictionary')
+    assert excinfo.type == ValueError
 #### LISTS AND SEQUENCES
 
 def test_simple_lists():
@@ -385,11 +413,4 @@ def test_nested_dicts():
 def test_dict_with_Value():
     d4 = {'a': 1, 'b': '3', 'c': 56.2}
     assert Value(Dict[str, Value(int)]).validate(d4) == {'a': 1, 'b': 3, 'c': 56}
-
-def test_wrong_generics():
-    '''Test that using a generic without arguments fails'''
-    with pytest.raises(ValueError) as excinfo:
-        Value(List).validate([1,2,3])
-    assert excinfo.match("Invalid requested type \(List\), generic types must contain arguments.")
-    assert excinfo.type == ValueError
 
