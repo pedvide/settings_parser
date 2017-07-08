@@ -45,7 +45,7 @@ class Kind(Enum):
 # type of innermost type, could be int, list, etc
 T = TypeVar('T')
 # the type of the settings value is a type
-ValType = type
+ValType = Any
 
 def _wrong_type_error_msg(value: T, val_type: ValType, name: str = '') -> str:
     '''Return the error message because the type of the value is not the expected val_type.'''
@@ -230,7 +230,7 @@ class Value():
 
         # Union type, try parsing each option until one works
         if type(val_type) == type(Union):  # pylint: disable=C0123
-            type_list = val_type.__args__  # type: ignore
+            type_list = val_type.__args__
             for curr_type in type_list:
                 try:
                     with no_logging():
@@ -248,7 +248,7 @@ class Value():
                    'any of the right types ({})')
             msg = msg.format(self.name or value, value, type(value).__name__,
                              ', '.join(_clean_type_name(typ)
-                                       for typ in val_type.__args__))  # type: ignore
+                                       for typ in val_type.__args__))
             raise SettingsValueError(msg + ', because ' + str(last_err)).with_traceback(tb)
 
         # generic mappings such as Dicts: validate both the keys and the values
@@ -258,7 +258,7 @@ class Value():
                                          ' Details: "This type can only validate dictionaries."')
             # go through all keys and values and validate them
             # __args__ has the two types for the keys and values
-            key_type, values_type = val_type.__args__  # type: ignore
+            key_type, values_type = val_type.__args__
             mapping = {self._validate_type_tree(inner_key, key_type,
                                                 rest_len_max, rest_len_min, key=True):
                        self._validate_type_tree(inner_val, values_type,
@@ -266,7 +266,7 @@ class Value():
                        for inner_key, inner_val in value.items()}
             # check length
             self._check_seq_len(mapping, cur_len_max, cur_len_min)
-            mapping_type = val_type.__extra__  # type: ignore
+            mapping_type = val_type.__extra__
             return self._cast_to_type(mapping, mapping_type)
 
         # generic iterables such as Lists, Tuple, Sets: validate each item
@@ -279,7 +279,7 @@ class Value():
                 not isinstance(value, Collection)):
                 raise SettingsValueError(_wrong_type_error_msg(value, val_type, self.name))
 
-            elements_type = val_type.__args__   # type: ignore
+            elements_type = val_type.__args__
             if elements_type is None:
                 msg = 'Invalid requested type ({}), generic types must contain arguments.'
                 raise SettingsTypeError(msg.format(_clean_type_name(val_type)))
@@ -303,7 +303,7 @@ class Value():
 
             # check length
             self._check_seq_len(sequence, cur_len_max, cur_len_min)
-            iterable_type = val_type.__extra__  # type: ignore
+            iterable_type = val_type.__extra__
             return self._cast_to_type(sequence, iterable_type)
 
         # single concrete type (int, str, list, dict, ...): cast to correct type
@@ -353,7 +353,7 @@ class NamedValue(Value):
             kwargs = vars(value)
             del kwargs['val_type']
             del kwargs['name']
-        super(NamedValue, self).__init__(val_type, name=str(key), **kwargs)  # type: ignore
+        super(NamedValue, self).__init__(val_type, name=str(key), **kwargs)
 
 
     @log_exceptions_warnings

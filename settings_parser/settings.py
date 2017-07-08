@@ -40,7 +40,7 @@ class Settings(dict):
                                     if namedvalue.kind is Value.exclusive)
         self._optional_values = self._optional_values | self._exclusive_values
 
-        self._config_file = None
+        self._config_file = None  # type: str
 
     @staticmethod
     def load_from_dict(d: Dict) -> 'Settings':
@@ -116,38 +116,38 @@ class Settings(dict):
         return parsed_dict
 
     @staticmethod
-    def _get_property(key: Hashable) -> Callable:
+    def _get_property(key: str) -> Callable:
         '''Returns functions to get dictionary items. Used to create properties.'''
         def _get_prop(self: 'Settings') -> Any:
             '''Property to get values'''
-            return self[str(key)]
+            return self[key]
         return _get_prop
 
     @staticmethod
-    def _set_property(key: Hashable) -> Callable:
+    def _set_property(key: str) -> Callable:
         '''Returns functions to set dictionary items. Used to create properties.'''
         def _set_prop(self: 'Settings', value: Any) -> None:
             '''Property to set values'''
-            self[str(key)] = value
+            self[key] = value
         return _set_prop
 
     @staticmethod
-    def _del_property(key: Hashable) -> Callable:
+    def _del_property(key: str) -> Callable:
         '''Returns functions to delete dictionary items. Used to create properties.'''
         def _del_prop(self: 'Settings') -> None:
             '''Property to set values'''
-            del self[str(key)]
+            del self[key]
         return _del_prop
 
-    def __setitem__(self, key: Hashable, value: Any) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         '''All items added to the dictionary are accesible via dot notation'''
         dict.__setitem__(self, key, value)
         setattr(self.__class__, str(key), property(fget=self._get_property(key),
-                                                   fset=self._set_property(key),
-                                                   fdel=self._del_property(key),
-                                                   doc=str(key)))
+                                              fset=self._set_property(key),
+                                              fdel=self._del_property(key),
+                                              doc=str(key)))
 
-    def __setattr__(self, key, value):
+    def __setattr__(self, key: str, value: Any) -> None:
         '''Set attributes as items in the dictionary, accesible with dot notation'''
         # this test allows attributes to be set in the __init__ method
         if not '_config_file' in self.__dict__:
@@ -157,7 +157,7 @@ class Settings(dict):
             dict.__setattr__(self, key, value)
         # add unkown attributes to the dictionary
         else:
-            self[str(key)] = value
+            self.__setitem__(key, value)
 
     @log_exceptions_warnings
     def validate(self, filename: str) -> None:
@@ -279,7 +279,7 @@ class Loader():
             return dict(res)
 
 
-if __name__ == "__main__":
-    import settings_parser.settings_config as settings_config
-    settings = Settings(settings_config.settings)
-    settings.validate('config_file.cfg')
+#if __name__ == "__main__":
+#    import settings_parser.settings_config as settings_config
+#    settings = Settings(settings_config.settings)
+#    settings.validate('config_file.cfg')
