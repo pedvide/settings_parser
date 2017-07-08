@@ -6,8 +6,8 @@ Created on Fri Jun  9 22:20:19 2017
 """
 from typing import Dict, List
 import pytest
-from settings_parser.value import Value, DictValue
-from settings_parser.util import ConfigWarning
+from settings_parser.value import Value, DictValue, Kind
+from settings_parser.util import SettingsValueError, SettingsExtraValueWarning
 
 
 def test_DictValue():
@@ -28,51 +28,51 @@ def test_DictValue():
 
     d = {'age': 28}
     # list of names and types is not a valid constructor
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(SettingsValueError) as excinfo:
         DictValue(['age', str]).validate(d)
     assert excinfo.match("The first argument must be a dictionary")
-    assert excinfo.type == ValueError
+    assert excinfo.type == SettingsValueError
 
     d = 'not a dictionary'
     # DictValues only validate dictionaries
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(SettingsValueError) as excinfo:
         DictValue({'age': int}).validate(d)
-    assert excinfo.match("DictValues can only validate dictionaries")
-    assert excinfo.type == ValueError
+    assert excinfo.match("does not have the right type")
+    assert excinfo.type == SettingsValueError
 
     # extra key:value pairs are ok, but they give off a warning and are ignored
     d = {'age': 28, 'city': 'utrecht'}
     d2 = {'age': 28, 'city': 'utrecht', 'extra': True}
-    with pytest.warns(ConfigWarning) as warnings:
+    with pytest.warns(SettingsExtraValueWarning) as warnings:
         assert DictValue({'age': int, 'city': str}).validate(d2) == d
     assert len(warnings) == 1 # one warning
-    warning = warnings.pop(ConfigWarning)
-    assert warning.category == ConfigWarning
+    warning = warnings.pop(SettingsExtraValueWarning)
+    assert warning.category == SettingsExtraValueWarning
     assert 'Some values or sections should not be present in the file' in str(warning.message)
 
     d = {'age': 28}
     # the dict doesn't contain all keys
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(SettingsValueError) as excinfo:
         DictValue({'age': int, 'city': str}).validate(d)
     assert excinfo.match("Setting ")
     assert excinfo.match("not in dictionary")
-    assert excinfo.type == ValueError
+    assert excinfo.type == SettingsValueError
 
     d = {'ag': 28, 'city': 'utrecht'}
     # wrong key name
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(SettingsValueError) as excinfo:
         DictValue({'age': int, 'city': str}).validate(d)
     assert excinfo.match("Setting ")
     assert excinfo.match("not in dictionary")
-    assert excinfo.type == ValueError
+    assert excinfo.type == SettingsValueError
 
     d = {'age': 'asd', 'city': 'utrecht'}
     # wrong value type
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(SettingsValueError) as excinfo:
         DictValue({'age': int, 'city': str}).validate(d)
     assert excinfo.match("Setting ")
     assert excinfo.match("does not have the right type")
-    assert excinfo.type == ValueError
+    assert excinfo.type == SettingsValueError
 
     # DictValue in Value
     d = {'age': 28, 'city': 'utrecht'}
@@ -99,11 +99,11 @@ def test_exclusive():
     assert dval2.validate(d1) == d1
 
     d2 = {'age': 28, 'city': 'utrecht'}
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(SettingsValueError) as excinfo:
         dval2.validate(d2)
     assert excinfo.match("Only one of the values")
     assert excinfo.match("can be present at the same time")
-    assert excinfo.type == ValueError
+    assert excinfo.type == SettingsValueError
 
 
 def test_nested_DictValue():
@@ -116,12 +116,18 @@ def test_nested_DictValue():
                       'subsection2': Value(List[int])}).validate(d) == d
 
     d2 = {'subsection1': {'subsubsection1': 'asd', 'subsubsection2': 5}, 'subsection2': 1}
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(SettingsValueError) as excinfo:
         DictValue({'subsection1': {'subsubsection1': str, 'subsubsection2': int},
                    'subsection2': Value(List[int])}).validate(d2)
-    assert excinfo.match("Setting subsection2")
+    assert excinfo.match('Setting "subsection2"')
     assert excinfo.match("does not have the right type")
-    assert excinfo.type == ValueError
+    assert excinfo.type == SettingsValueError
+
+    # with optional sub-DictValues
+    d3 = {'subsection2': [1,2,3]}
+    assert DictValue({'subsection1': DictValue({'subsubsection1': str, 'subsubsection2': int},
+                                               kind=Kind.optional),
+                      'subsection2': Value(List[int])}).validate(d3) == d3
 
 
 def test_DictValue_in_Dict():
@@ -132,18 +138,18 @@ def test_DictValue_in_Dict():
     assert Value(Dict[str, DictValue({'age': int, 'city': str})]).validate(d) == d
 
     # wrong key type
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(SettingsValueError) as excinfo:
         assert Value(Dict[int, DictValue({'age': int, 'city': str})]).validate(d) == d
     assert excinfo.match("Setting")
     assert excinfo.match("does not have the right type")
-    assert excinfo.type == ValueError
+    assert excinfo.type == SettingsValueError
 
     # wrong key type
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(SettingsValueError) as excinfo:
         assert Value(Dict[int, DictValue({'age': int, 'city': str})]).validate(45) == d
     assert excinfo.match("Setting")
     assert excinfo.match("does not have the right type")
     assert excinfo.match("This type can only validate dictionaries")
-    assert excinfo.type == ValueError
+    assert excinfo.type == SettingsValueError
 
 

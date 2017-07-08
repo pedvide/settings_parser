@@ -10,15 +10,15 @@ import sys
 #import sys
 # nice debug printing of settings
 #import pprint
+#import typing
 from typing import Dict, List, Tuple
 from typing import Callable, TypeVar, Hashable, Any
 from typing import Union, Sequence, Iterable, Mapping, Sized, Collection
-from functools import wraps
-from itertools import zip_longest
+#from functools import wraps
 from enum import Enum
 import warnings
 
-from settings_parser.util import ConfigWarning, ValueTypeError
+from settings_parser.util import SettingsValueError, SettingsTypeError, SettingsExtraValueWarning
 from settings_parser.util import no_logging, log_exceptions_warnings
 
 
@@ -37,15 +37,31 @@ from settings_parser.util import no_logging, log_exceptions_warnings
 #typing.OrderedDictType.__module__ = 'typing'
 
 class Kind(Enum):
-        mandatory = 1
-        optional = 2
-        exclusive = 3
+    mandatory = 1
+    optional = 2
+    exclusive = 3
 
 
 # type of innermost type, could be int, list, etc
 T = TypeVar('T')
 # the type of the settings value is a type
 ValType = type
+
+def _wrong_type_error_msg(value: T, val_type: ValType, name: str = '') -> str:
+    '''Return the error message because the type of the value is not the expected val_type.'''
+    msg1 = 'Setting "{}" (value: {!r}, type: {}) does not '.format(name or value, value,
+                                                                 type(value).__name__)
+    msg2 = 'have the right type ({}).'.format(_clean_type_name(val_type))
+    return msg1 + msg2
+
+def _clean_type_name(val_type: ValType) -> str:
+    '''Returns the clean name of the val_type'''
+    if hasattr(val_type, '__module__') and val_type.__module__ == 'typing':
+        type_name = str(val_type).replace('typing.', '')
+    else:
+        type_name = val_type.__name__
+    return type_name.replace('__main__.', '')
+
 
 class Value():
     '''A value of a setting. The value has an specific type and optionally max and min values.
@@ -99,20 +115,33 @@ class Value():
 
         self.expand_args = expand_args
 
+#    def __getstate__(self):
+#        '''For pickle'''
+#        d = self.__dict__.copy()
+#        d['val_type'] = repr(d['val_type'])
+#        return d
+#
+#    def __setstate__(self, d):
+#        '''For pickle'''
+#        print(d)
+#        d['val_type'] = eval(d['val_type'])
+#        self.__dict__ = d
+
     def __repr__(self) -> str:
         '''Return a representation of Value'''
         optional = ', '.join(attr + '=' + repr(getattr(self, attr))
                              for attr in ['name', 'val_max', 'val_min', 'len_max', 'len_min']
                              if getattr(self, attr) and getattr(self, attr) != [None])
+        optional = '' if not optional else ', ' + optional
         if self.kind is not Kind.mandatory:
-            optional += ', kind=' + self.kind.name
+            kind = ', kind=' + self.kind.name
+            optional = optional + kind
         return '{}({}{})'.format(self.__class__.__name__, _clean_type_name(self.val_type),
-                                 ', ' + optional if optional else '')
+                                 optional)
 
-    def __call__(self, config_dict: Dict) -> Dict:
+    def __call__(self, config_dict: Dict) -> Any:
         '''Pretend to be a type so typing module doesn't complain'''
         return self.validate(config_dict)
-
 
     @staticmethod
     def _print_trace(value: T, val_type: ValType) -> None:  # pragma: no cover
@@ -130,9 +159,9 @@ class Value():
         msg2 = '{} than {}.'
         try:
             if self.val_max is not None and value > self.val_max:  # type: ignore
-                raise ValueError(msg1 + msg2.format('larger', self.val_max))
+                raise SettingsValueError(msg1 + msg2.format('larger', self.val_max))
             if self.val_min is not None and value < self.val_min:  # type: ignore
-                raise ValueError(msg1 + msg2.format('smaller', self.val_min))
+                raise SettingsValueError(msg1 + msg2.format('smaller', self.val_min))
         except TypeError as err:
             msg = ('Value {} of type {}'.format(value,_clean_type_name(type(value))) +
                    ' cannot be compared to ' +
@@ -140,7 +169,7 @@ class Value():
                    (' and/or ' if  self.val_max and  self.val_min else '') +
                    ('val_min ({})'.format(self.val_min) if self.val_min else '') +
                    '.')
-            raise ValueTypeError(msg) from err
+            raise SettingsValueError(msg) from err
 
     @log_exceptions_warnings
     def _check_seq_len(self, seq: Sized, len_max: int, len_min: int) -> None:
@@ -148,16 +177,9 @@ class Value():
         msg1 = 'Length of {} ({}) cannot be '.format(self.name or seq, len(seq))
         msg2 = '{} than {}.'
         if len_max is not None and len(seq) > len_max:
-            raise ValueError(msg1 + msg2.format('larger', len_max))
+            raise SettingsValueError(msg1 + msg2.format('larger', len_max))
         if len_min is not None and len(seq) < len_min:
-           raise ValueError(msg1 + msg2.format('smaller', len_min))
-
-    def _wrong_type_error_msg(self, value: T, val_type: ValType) -> str:
-        '''Return the error message because the type of the value is not the expected val_type.'''
-        msg1 = 'Setting {} (value: {!r}, type: {}) does not '.format(self.name or value, value,
-                                                                       type(value).__name__)
-        msg2 = 'have the right type ({}).'.format(_clean_type_name(val_type))
-        return msg1 + msg2
+           raise SettingsValueError(msg1 + msg2.format('smaller', len_min))
 
     def _cast_to_type(self, value: T, val_type: ValType) -> Any:
         '''Cast the value to the type, which should be callable.'''
@@ -168,43 +190,17 @@ class Value():
                 elif isinstance(value, Iterable):
                     parsed_value = val_type(*value)
                 else:
-                    raise ValueError('Expected a list or a dictionary.')
+                    raise SettingsValueError('Expected a list or a dictionary.')
             else:
                 parsed_value = val_type(value)
         except (ValueError, TypeError) as err:  # no match
-            raise ValueError(self._wrong_type_error_msg(value, val_type) +
-                             ' Details: "' + str(err).capitalize() + '".')
+            raise SettingsValueError(_wrong_type_error_msg(value, val_type, self.name) +
+                                     ' Details: "' + str(err).capitalize() + '".')
         else:
             # no exception, val_type matched the value!
             return parsed_value
 
-    @staticmethod
-    def trace(fn: Callable) -> Callable:  # pragma: no cover
-        '''Trace the execution of a recursive function'''
-        stream = sys.stdout
-        indent_step = 2
-        show_ret = False
-        cur_indent = 0
-        @wraps(fn)
-        def wrapper(*args: Tuple, **kwargs: Dict) -> None:
-            nonlocal cur_indent
-            indent = ' ' * cur_indent
-            argstr = ', '.join(
-                [repr(a).replace('typing.', '') for a in args[1:3]])
-            stream.write('%s%s(%s)\n' % (indent, fn.__name__, argstr))
-
-            cur_indent += indent_step
-            ret = fn(*args, **kwargs)
-            cur_indent -= indent_step
-
-            if show_ret:
-                stream.write('%s--> %s\n' % (indent, ret))
-            return ret
-        return wrapper
-
-
     @log_exceptions_warnings
-#    @trace
     def _validate_type_tree(self, value: T, val_type: ValType,
                             len_max: List = None, len_min: List = None,
                             key: bool = False) -> Any:
@@ -229,8 +225,8 @@ class Value():
         # length max and min at this tree level
         cur_len_max = None if not len_max else len_max[0]
         cur_len_min = None if not len_min else len_min[0]
-        rest_len_max = [None] if len(len_max) < 1 else len_max[1:]
-        rest_len_min = [None] if len(len_min) < 1 else len_min[1:]
+        rest_len_max = [None] if not len_max or len(len_max) < 1 else len_max[1:]
+        rest_len_min = [None] if not len_min or len(len_min) < 1 else len_min[1:]
 
         # Union type, try parsing each option until one works
         if type(val_type) == type(Union):  # pylint: disable=C0123
@@ -239,7 +235,7 @@ class Value():
                 try:
                     with no_logging():
                         parsed_value = self._validate_type_tree(value, curr_type, len_max, len_min)
-                except ValueError as err:
+                except SettingsValueError as err:
                     # save exception and traceback for later
                     last_err = err
                     tb = sys.exc_info()[2]
@@ -248,18 +244,18 @@ class Value():
                     # some type in the Union matched
                     return parsed_value
             # no match, error
-            msg = ('Setting {!r} (value: {!r}, type: {}) does not have '
+            msg = ('Setting "{!r}" (value: {!r}, type: {}) does not have '
                    'any of the right types ({})')
             msg = msg.format(self.name or value, value, type(value).__name__,
                              ', '.join(_clean_type_name(typ)
                                        for typ in val_type.__args__))  # type: ignore
-            raise ValueError(msg + ', because ' + str(last_err)).with_traceback(tb)
+            raise SettingsValueError(msg + ', because ' + str(last_err)).with_traceback(tb)
 
         # generic mappings such as Dicts: validate both the keys and the values
         elif hasattr(val_type, '__extra__') and issubclass(val_type, Mapping):
             if not isinstance(value, Mapping):
-                raise ValueError(self._wrong_type_error_msg(value, val_type) +
-                                 ' Details: "This type can only validate dictionaries."')
+                raise SettingsValueError(_wrong_type_error_msg(value, val_type, self.name) +
+                                         ' Details: "This type can only validate dictionaries."')
             # go through all keys and values and validate them
             # __args__ has the two types for the keys and values
             key_type, values_type = val_type.__args__  # type: ignore
@@ -281,26 +277,29 @@ class Value():
             # also avoid iterating if value is not iterable
             if (isinstance(value, str) and not issubclass(val_type, str) or
                 not isinstance(value, Collection)):
-                raise ValueError(self._wrong_type_error_msg(value, val_type))
+                raise SettingsValueError(_wrong_type_error_msg(value, val_type, self.name))
 
             elements_type = val_type.__args__   # type: ignore
             if elements_type is None:
                 msg = 'Invalid requested type ({}), generic types must contain arguments.'
-                raise ValueError(msg.format(_clean_type_name(val_type)))
+                raise SettingsTypeError(msg.format(_clean_type_name(val_type)))
 
             # build sequence from the lower branches,
             # pass the lower level lengths
-            # if it´s a List, elements_type = (type, ), and zip_longest will iterate over
-            # the list using the same type.
-            # If it's Tuple, elements_type=(type1, type2, etc) and zip_longest will iterate over
-            # each pair of inner_type and inner_value
-            if type(val_type) == type(Tuple) and len(elements_type) != len(value):
-                msg = ' Details: "Tuples must have the same number of sub-types and values."'
-                raise ValueError(self._wrong_type_error_msg(value, val_type) + msg)
+            # if it´s a List, elements_type = (type, ), and it will be changed to
+            # elements_type = (type, type, type, ...) for the length of values.
+            # If it's Tuple, elements_type=(type1, type2, ...).
+            if len(elements_type) != len(value):
+                if type(val_type) == type(Tuple):
+                    msg = (' Details: "Wrong number of values: ' +
+                           '{} instead of {}."'.format(len(value), len(elements_type)))
+                    raise SettingsValueError(_wrong_type_error_msg(value, val_type,
+                                                                   self.name) + msg)
+                else:
+                    elements_type = (elements_type[0], )*len(value)
             sequence = [self._validate_type_tree(inner_value, inner_type,
                                                  rest_len_max, rest_len_min)
-                        for inner_type, inner_value in zip_longest(elements_type, value,
-                                                                   fillvalue=elements_type[0])]
+                        for inner_type, inner_value in zip(elements_type, value)]
 
             # check length
             self._check_seq_len(sequence, cur_len_max, cur_len_min)
@@ -320,7 +319,7 @@ class Value():
             return parsed_value
 
         else:
-            raise TypeError('Type not recognized or supported ({}).'.format(val_type))
+            raise SettingsTypeError('Type not recognized or supported ({}).'.format(val_type))
 
     def validate(self, value: T) -> Any:
         '''validates the value from a settings file
@@ -329,31 +328,24 @@ class Value():
                                                     self.len_max, self.len_min)
 
         if self.fun and not self.fun(validated_value):
-            msg1 = 'Setting {} (value: {!r}, type: {}) is not '.format(self.name or validated_value,
-                                                                       validated_value,
-                                                                       type(validated_value).__name__)
+            val_type = 'value: {!r}, type: {}'.format(validated_value,
+                                                      type(validated_value).__name__)
+            msg1 = 'Setting "{}" ({}) is not '.format(self.name or validated_value, val_type)
             msg2 = 'valid according to the user function {}.'.format(self.fun.__name__)
-            raise ValueError(msg1 + msg2)
+            raise SettingsValueError(msg1 + msg2)
 
         return validated_value
-
-
-def _clean_type_name(val_type: ValType) -> str:
-    '''Returns the clean name of the val_type'''
-    if val_type.__module__ == 'typing':
-        type_name = str(val_type).replace('typing.', '')
-    else:
-        type_name = val_type.__name__
-    return type_name.replace('__main__.', '')
 
 
 class NamedValue(Value):
     '''Similar to Value, but it has a key (which must be hashable) and
         it validates a dictionary that contains the key and a value with the type val_type.'''
-    def __init__(self, key: Hashable, val_type: Union[ValType, Value], **kwargs: Any) -> None:
+    def __init__(self, key: Hashable, val_type: Union[ValType, Value, 'DictValue'],
+                 **kwargs: Any) -> None:
         '''The key must be hashable (often it's a string), val_type can be a Value instance
             (in this case the rest of the arguments are ignored),
             or a type, the rest of the arguments are as for Value.'''
+        self.key = key
         if isinstance(val_type, Value):
             # use the Value's parameters for this NamedValue
             value = val_type
@@ -361,22 +353,26 @@ class NamedValue(Value):
             kwargs = vars(value)
             del kwargs['val_type']
             del kwargs['name']
-        super(NamedValue, self).__init__(val_type, name=str(key), **kwargs)
-        self.key = key
+        super(NamedValue, self).__init__(val_type, name=str(key), **kwargs)  # type: ignore
+
 
     @log_exceptions_warnings
-    def validate(self, value: T) -> Any:
+    def validate(self, value: T) -> Dict:
         '''Checks that the value is a dictionary where the key is equal to the name
             and the value has type val_type.'''
         if not isinstance(value, Dict):
             msg = 'The value to validate ({}) is not a dictionary!'.format(value)
-            raise ValueError(msg)
+            raise SettingsValueError(msg)
         if self.key not in value:
-            msg = "Setting '{}' not in dictionary {}".format(self.name, value)
-            raise ValueError(msg)
+            msg = 'Setting "{}" not in dictionary {}'.format(self.name, value)
+            raise SettingsValueError(msg)
         parsed_key = self.key
-        parsed_value = self._validate_type_tree(value[self.key], self.val_type,
-                                                self.len_max, self.len_min)
+        try:
+            parsed_value = self._validate_type_tree(value[self.key], self.val_type,
+                                                    self.len_max, self.len_min)
+        except SettingsValueError as exc:
+            msg = 'Error validating section "{}". Details: '.format(self.key)
+            raise SettingsValueError(msg + str(exc)) from exc
 
         return {parsed_key: parsed_value}
 
@@ -388,17 +384,25 @@ class DictValue():
     exclusive = Kind.exclusive
 
     @log_exceptions_warnings
-    def __init__(self, values: Dict[Hashable, Union[Value, ValType]],
+    def __init__(self, values: Dict[Hashable, Union[Value, 'DictValue', ValType]],
                  kind: Kind = Kind.mandatory) -> None:
         '''values is a dictionary with the keys hashable
             and the values are simple types, Value instances or dictionaries of either.'''
+
         if isinstance(values, Dict):
-            self.values_list = [NamedValue(key, value if not isinstance(value, Dict)
-                                                else DictValue(value))
-                                for key, value in values.items()]
+            self.values_list = []  # type: List[NamedValue]
+            for key, value in values.items():
+                if isinstance(value, DictValue):
+                    self.values_list.append(NamedValue(key, value,
+                                                       kind=value.kind))  # type: ignore
+                elif isinstance(value, Dict):
+                    self.values_list.append(NamedValue(key, DictValue(value)))
+                else:
+                    self.values_list.append(NamedValue(key, value))
+
         else:
             msg = 'The first argument must be a dictionary.'
-            raise ValueError(msg)
+            raise SettingsValueError(msg)
         self.kind = kind
 
         value_names = ', '.join('{}: {}'.format(repr(value.key), _clean_type_name(value.val_type))
@@ -407,11 +411,11 @@ class DictValue():
 
 
     def __repr__(self) -> str:
-        return self.__name__
+        return str(self.__name__)
 
     def __call__(self, config_dict: Dict) -> Dict:
         '''Pretend to be a type so typing module doesn't complain'''
-        return self.validate(config_dict)
+        return dict(self.validate(config_dict))
 
     @log_exceptions_warnings
     def _check_extra_and_exclusive(self, config_dict: Dict) -> None:
@@ -429,18 +433,20 @@ class DictValue():
         if set_extra and not set_extra.issubset(optional_values):
             set_not_optional = set_extra - optional_values
             warnings.warn('Some values or sections should not be present in the file: ' +
-                          str(set_not_optional), ConfigWarning)
+                          str(set_not_optional), SettingsExtraValueWarning)
         # exclusive values
         if len(exclusive_values) > 1 and exclusive_values.issubset(present_values):
-            raise ValueError('Only one of the values in ' +
+            raise SettingsValueError('Only one of the values in ' +
                              '{} can be present at the same time.'.format(exclusive_values))
 
     @log_exceptions_warnings
     def validate(self, config_dict: Dict) -> Dict:
         '''Return the validated dictionary'''
         if not isinstance(config_dict, Dict):
-            msg = 'DictValues can only validate dictionaries!'
-            raise ValueError(msg)
+            dict_str = repr(self).replace('DictValue', 'dictionary', 1)
+            rreplaced = _wrong_type_error_msg(config_dict, list).rsplit('list', 1)
+            msg = dict_str.join(rreplaced)
+            raise SettingsValueError(msg)
 
         self._check_extra_and_exclusive(config_dict)
 
@@ -449,7 +455,8 @@ class DictValue():
         parsed_dict = {}  # type: Dict
         for val in self.values_list:
             # skip optional values that aren't present
-            if val.kind is not Value.mandatory and val.key not in config_dict:
+            if val.kind is not Value.mandatory and (val.key not in config_dict or
+                                                    config_dict[val.key] is None):
                 continue
             parsed_dict.update(val.validate(config_dict))
         return parsed_dict

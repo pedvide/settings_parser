@@ -13,7 +13,7 @@ import logging
 import warnings
 from functools import wraps
 
-from typing import Generator, Callable, Any, Tuple, Dict
+from typing import Generator, Callable, Tuple, Dict, TypeVar
 
 
 # http://stackoverflow.com/a/11892712
@@ -32,11 +32,11 @@ def temp_filename(data: str = None, mode: str = 'wt') -> Generator:
     finally:
         os.unlink(temp.name)  # delete file
 
-
-def log_exceptions_warnings(function: Callable) -> Callable:
+Ret = TypeVar('Ret')
+def log_exceptions_warnings(function: Callable[..., Ret]) -> Callable[..., Ret]:
     '''Decorator to log exceptions and warnings'''
     @wraps(function)
-    def wrapper(*args: Tuple, **kwargs: Dict) -> Any:
+    def wrapper(*args: Tuple, **kwargs: Dict) -> Ret:
         try:
             with warnings.catch_warnings(record=True) as warn_list:
                 # capture all warnings
@@ -46,14 +46,17 @@ def log_exceptions_warnings(function: Callable) -> Callable:
             logger = logging.getLogger(function.__module__)
             logger.error(exc.args[0])
             raise
-        for warn in warn_list:
+        for warn in warn_list or []:
             logger = logging.getLogger(function.__module__)
-            msg = (warn.category.__name__ + ': "' + str(warn.message) +
-                   '" in ' + os.path.basename(warn.filename) +
-                   ', line: ' + str(warn.lineno) + '.')
-            logger.warning(msg)
+            log_msg = (warn.category.__name__ + ': "' + str(warn.message) +
+                       '" in ' + os.path.basename(warn.filename) +
+                       ', line: ' + str(warn.lineno) + '.')
+            logger.warning(log_msg)
+            warn_msg = str(warn.message) + '.'
             # re-raise warnings
-            warnings.warn(msg, warn.category)
+            # stacklevel=2 makes the warning refer to log_exceptions_warnings‘s caller,
+            # rather than to the source of log_exceptions_warnings() itself
+            warnings.warn(warn_msg, warn.category, stacklevel=2)
         return ret
     return wrapper
 
@@ -83,16 +86,31 @@ def no_logging() -> Generator:
     logging.disable(logging.NOTSET)
 
 
-class ValueTypeError(TypeError):
+class SettingsException(Exception):
+    '''Base for all exceptions in this module'''
+    pass
+
+class SettingsWarning(Warning):
+    '''Base for all exceptions in this module'''
+    pass
+
+class SettingsValueError(SettingsException):
+    '''The value passed to validate is not valid.'''
+    pass
+
+class SettingsTypeError(SettingsException):
     '''The type passed to Value is not valid.'''
     pass
 
 
-class ConfigError(SyntaxError):
+class SettingsFileError(SettingsException):
     '''Something in the configuration file is not correct'''
     pass
 
-
-class ConfigWarning(UserWarning):
+class SettingsFileWarning(SettingsWarning):
     '''Something in the configuration file is not correct'''
+    pass
+
+class SettingsExtraValueWarning(SettingsWarning):
+    '''Extra value found in the configuration file'''
     pass

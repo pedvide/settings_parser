@@ -6,9 +6,8 @@ Created on Fri Mar 10 16:48:45 2017
 """
 from fractions import Fraction
 import sys
-import datetime
-from typing import List, Tuple, Union, Dict
-from settings_parser.value import Value, DictValue
+from typing import List, Tuple, Dict
+from settings_parser import Value, DictValue, Kind
 
 class f_float(type):
     '''Type that converts numbers or str into floats through Fraction.'''
@@ -16,13 +15,13 @@ class f_float(type):
         '''Return the float'''
         return float(Fraction(x))  # type: ignore
 f_float.__name__ = 'float(Fraction())'
-
-# smallest float number
-min_float = sys.float_info.min
-
+min_float = sys.float_info.min  # smallest float number
 Vector = Tuple[f_float, f_float, f_float]
+
 settings = {'version': Value(int, val_min=1, val_max=1),
             'section': DictValue({'subsection1': {'subsubsection1': str, 'subsubsection2': int},
                                   'subsection2': Value(List[int])}),
             'people': Value(Dict[str, DictValue({'age': int, 'city': str})]),  #  type: ignore
+            'optional_section': Value(Dict[str, int], kind=Kind.optional),
+            'position': Value(Vector, val_min=min_float)
            }
