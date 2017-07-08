@@ -17,7 +17,7 @@ Created on Tue Nov  1 16:17:59 2016
 # CONDA:
 # build and upload to pypi as before.
 # then on directory python/conda delete folder settings_parser
-# then conda skeleton pypi --setup-options="--single-version-externally-managed --record=record.txt" settings_parser
+# then conda skeleton pypi --setup-options="--single-version-externally-managed --record=record.txt" settings-parser
 # conda build --py 3.6 settings_parser
 # conda convert -f --platform all PATH-TO-PACKAGE -o .
 # anaconda login

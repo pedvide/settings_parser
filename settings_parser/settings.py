@@ -61,7 +61,7 @@ class Settings(dict):
             return pprint.pformat(self.settings)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Settings):
+        if not isinstance(other, Dict):
             return NotImplemented
         for key in self:
             if not key in other or self[key] != other[key]:
