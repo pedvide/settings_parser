@@ -2,6 +2,7 @@
 source = settings_parser
 omit =
     *test_*
+    settings_parser\settings_config.py
 
 [report]
 exclude_lines =

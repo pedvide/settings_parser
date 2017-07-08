@@ -52,7 +52,6 @@ def test_good_config(good_settings, settings_dict):
     good_settings['version'] = 2
     assert sett != good_settings
 
-
 def test_change_config(settings_dict):
     ''''Changing the settings in any way gets updated.'''
     filename = os.path.join(test_folder_path, 'test_standard_config.txt')
@@ -75,6 +74,9 @@ def test_change_config(settings_dict):
     sett.new_item = 'new'
     assert sett.new_item == sett['new_item']
     assert sett.new_item == sett.settings['new_item']
+
+    del sett.new_item
+    assert hasattr(sett, 'new_item') == False
 
 
 def test_non_existing_file(settings_dict):
@@ -133,3 +135,31 @@ extra: 3
     assert warning.category == SettingsExtraValueWarning
     assert 'Some values or sections should not be present in the file' in str(warning.message)
 
+def test_missing_value(settings_dict):
+    ''''Test that missing values raise errors.'''
+    orig_filename = os.path.join(test_folder_path, 'test_standard_config.txt')
+    with open(orig_filename) as file:
+        file_text = file.read()
+    # remove the version section
+    file_text = file_text.replace('version: 1', '')
+
+    sett = settings.Settings(settings_dict)
+
+    with temp_filename(file_text) as filename:
+        with pytest.raises(SettingsFileError) as excinfo:
+            sett.validate(filename)
+    assert excinfo.match(r'Sections that are needed but not present in the file')
+    assert excinfo.type == SettingsFileError
+
+
+
+def test_load_from_dict(settings_dict, good_settings):
+    '''Create an instance of Settings from a dictionary'''
+
+    filename = os.path.join(test_folder_path, 'test_standard_config.txt')
+    sett = settings.Settings(settings_dict)
+    sett.validate(filename)
+
+    sett_from_d = settings.Settings.load_from_dict(good_settings)
+
+    assert sett_from_d == sett

@@ -13,7 +13,7 @@ import logging
 import pprint
 import copy
 import warnings
-from typing import Dict, Union, IO, Hashable, Any, Callable
+from typing import Dict, Union, IO, Any, Callable
 
 import ruamel_yaml as yaml
 
@@ -41,15 +41,6 @@ class Settings(dict):
         self._optional_values = self._optional_values | self._exclusive_values
 
         self._config_file = None  # type: str
-
-    @staticmethod
-    def load_from_dict(d: Dict) -> 'Settings':
-        '''Load the dictionary d as settings.'''
-        settings = Settings({})
-        for key, value in d.items():
-            settings[key] = value
-        settings._config_file = ''
-        return settings
 
     def __repr__(self) -> str:
         '''Representation of a settings instance.'''
@@ -85,6 +76,63 @@ class Settings(dict):
 #        d['val_type'] = eval(d['val_type'])
 #        self.__dict__ = d
 
+    @staticmethod
+    def _get_property(key: str) -> Callable:
+        '''Returns functions to get dictionary items. Used to create properties.'''
+        def _get_prop(self: 'Settings') -> Any:
+            '''Property to get values'''
+            return self[key]
+        return _get_prop
+
+    @staticmethod
+    def _set_property(key: str) -> Callable:
+        '''Returns functions to set dictionary items. Used to create properties.'''
+        def _set_prop(self: 'Settings', value: Any) -> None:
+            '''Property to set values'''
+            self[key] = value
+        return _set_prop
+
+    @staticmethod
+    def _del_property(key: str) -> Callable:
+        '''Returns functions to delete dictionary items. Used to create properties.'''
+        def _del_prop(self: 'Settings') -> None:
+            '''Property to delete values: delete from dictionary and the property.'''
+            del self[key]
+            delattr(self.__class__, key)
+        return _del_prop
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        '''All items added to the dictionary are accesible via dot notation'''
+        dict.__setitem__(self, key, value)
+        setattr(self.__class__, str(key), property(fget=self._get_property(key),
+                                              fset=self._set_property(key),
+                                              fdel=self._del_property(key),
+                                              doc=str(key)))
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        '''Set attributes as items in the dictionary, accesible with dot notation'''
+        # this test allows attributes to be set in the __init__ method
+        if not '_config_file' in self.__dict__:
+            return dict.__setattr__(self, key, value)
+        # known attributes set at __init__ are handled normally
+        elif key in self.__dict__:
+            dict.__setattr__(self, key, value)
+        # own dictionary key (it's a property already)
+        elif key in self:
+            getattr(self.__class__, key).fset(self, value)
+        # add unkown attributes to the dictionary
+        else:
+            self.__setitem__(key, value)
+
+    @staticmethod
+    def load_from_dict(d: Dict) -> 'Settings':
+        '''Load the dictionary d as settings.'''
+        settings = Settings({})
+        for key, value in d.items():
+            settings[key] = value
+        settings._config_file = ''
+        return settings
+
     @property
     def settings(self) -> Dict:
         '''Returns a dictionary with the settings'''
@@ -114,50 +162,6 @@ class Settings(dict):
 
 #        pprint.pprint(parsed_dict)
         return parsed_dict
-
-    @staticmethod
-    def _get_property(key: str) -> Callable:
-        '''Returns functions to get dictionary items. Used to create properties.'''
-        def _get_prop(self: 'Settings') -> Any:
-            '''Property to get values'''
-            return self[key]
-        return _get_prop
-
-    @staticmethod
-    def _set_property(key: str) -> Callable:
-        '''Returns functions to set dictionary items. Used to create properties.'''
-        def _set_prop(self: 'Settings', value: Any) -> None:
-            '''Property to set values'''
-            self[key] = value
-        return _set_prop
-
-    @staticmethod
-    def _del_property(key: str) -> Callable:
-        '''Returns functions to delete dictionary items. Used to create properties.'''
-        def _del_prop(self: 'Settings') -> None:
-            '''Property to set values'''
-            del self[key]
-        return _del_prop
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        '''All items added to the dictionary are accesible via dot notation'''
-        dict.__setitem__(self, key, value)
-        setattr(self.__class__, str(key), property(fget=self._get_property(key),
-                                              fset=self._set_property(key),
-                                              fdel=self._del_property(key),
-                                              doc=str(key)))
-
-    def __setattr__(self, key: str, value: Any) -> None:
-        '''Set attributes as items in the dictionary, accesible with dot notation'''
-        # this test allows attributes to be set in the __init__ method
-        if not '_config_file' in self.__dict__:
-            return dict.__setattr__(self, key, value)
-        # known attributes are handled normally
-        elif key in self.__dict__:
-            dict.__setattr__(self, key, value)
-        # add unkown attributes to the dictionary
-        else:
-            self.__setitem__(key, value)
 
     @log_exceptions_warnings
     def validate(self, filename: str) -> None:
@@ -208,7 +212,7 @@ class Loader():
         if file_format.lower() == 'yaml':
             self.file_dict = self._load_yaml_file(filename)
         else:
-            raise NotImplemented
+            raise NotImplementedError
 
         if not self.file_dict:
             msg = 'The settings file is empty or otherwise invalid ({})!'.format(filename)
