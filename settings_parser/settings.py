@@ -15,7 +15,7 @@ import copy
 import warnings
 from typing import Dict, Union, IO, Any, Callable
 
-import ruamel_yaml as yaml
+import ruamel.yaml as yaml
 
 from settings_parser.util import log_exceptions_warnings, SettingsFileError, SettingsFileWarning
 from settings_parser.util import SettingsValueError

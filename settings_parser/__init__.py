@@ -4,7 +4,7 @@ Created on Mon Oct 31 14:27:37 2016
 
 @author: Pedro
 """
-VERSION = '1.1.2'
+VERSION = '1.3.2'
 DESCRIPTION = 'settings_parser: Load, parse and validate user settings'
 
 from settings_parser.settings import Settings

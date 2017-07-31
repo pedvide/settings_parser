@@ -17,7 +17,7 @@ Created on Tue Nov  1 16:17:59 2016
 # CONDA:
 # build and upload to pypi as before.
 # then on directory python/conda delete folder settings_parser
-# then conda skeleton pypi --setup-options="--single-version-externally-managed --record=record.txt" settings-parser
+# then conda skeleton pypi settings-parser
 # conda build --py 3.6 settings_parser
 # conda convert -f --platform all PATH-TO-PACKAGE -o .
 # anaconda login
@@ -98,7 +98,7 @@ setup(
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['ruamel_yaml'],
+    install_requires=['ruamel.yaml'],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,
@@ -106,7 +106,7 @@ setup(
     # $ pip install -e .[dev,test]
     extras_require={
         'test': ['pytest', 'pytest-cov', 'pytest-mock', 'pytest-xdist', 'pytest-catchlog',
-                 'python-coveralls', 'flake8', 'mypy'],
+                 'python-coveralls', 'flake8', 'mypy', 'ruamel.yaml'],
     },
 
     # If there are data files included in your packages that need to be

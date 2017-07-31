@@ -1,5 +1,3 @@
-ruamel_yaml # anaconda
-
 # only for tests
 pytest >=3.0.3 # anaconda
 pytest-cov # coverage of tests
@@ -9,3 +7,4 @@ python-xdist # xdist
 pytest-catchlog # check logs
 flake8
 mypy
+ruamel.yaml
