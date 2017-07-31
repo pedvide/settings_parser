@@ -13,7 +13,7 @@ class f_float(type):
     '''Type that converts numbers or str into floats through Fraction.'''
     def __new__(mcs, x: str) -> float:
         '''Return the float'''
-        return float(Fraction(x))  # type: ignore
+        return float(Fraction(x))
 f_float.__name__ = 'float(Fraction())'
 min_float = sys.float_info.min  # smallest float number
 Vector = Tuple[f_float, f_float, f_float]
